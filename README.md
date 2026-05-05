@@ -43,7 +43,7 @@ docker compose up -d
 启动后端：
 
 ```bash
-git clone git@github.com:basketikun/chatgpt2api.git
+git clone git@github.com:luskB/chatgpt2api.git
 cd chatgpt2api
 uv sync
 uv run main.py
