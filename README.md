@@ -27,15 +27,15 @@
 ### Docker 运行
 
 ```bash
-git clone git@github.com:basketikun/chatgpt2api.git
+git clone git@github.com:luskB/chatgpt2api.git
 cd chatgpt2api
 docker compose up -d
 ```
 
 启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
 
-- Web 面板：`http://localhost:3000`
-- API 地址：`http://localhost:3000/v1`
+- Web 面板：`http://localhost:8866`
+- API 地址：`http://localhost:8866/v1`
 - 数据目录：`./data`
 
 ### 本地开发
