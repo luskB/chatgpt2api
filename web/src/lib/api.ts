@@ -238,6 +238,61 @@ export type RegisterConfig = {
   }>;
 };
 
+export type ImportedMailboxStatus = "unused" | "leased" | "used" | "failed";
+
+export type ImportedMailbox = {
+  id: string;
+  email: string;
+  fetch_method: "imap" | "graph";
+  imap_host: string;
+  imap_port: number;
+  imap_ssl: boolean;
+  imap_folder: string;
+  graph_tenant: string;
+  client_id: string;
+  has_password: boolean;
+  has_refresh_token: boolean;
+  password_masked: string;
+  refresh_token_masked: string;
+  status: ImportedMailboxStatus;
+  leased_until?: string | null;
+  leased_at?: string | null;
+  used_at?: string | null;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ImportedMailboxSummary = {
+  total: number;
+  unused: number;
+  leased: number;
+  used: number;
+  failed: number;
+};
+
+export type ImportedMailboxListResponse = {
+  items: ImportedMailbox[];
+  summary: ImportedMailboxSummary;
+};
+
+export type ImportedMailboxImportResponse = ImportedMailboxListResponse & {
+  imported: number;
+  skipped: number;
+  errors: Array<{ line: number; error: string }>;
+};
+
+export type ImportedMailboxImportRequest = {
+  text: string;
+  fetch_method?: "imap" | "graph";
+  imap_host?: string;
+  imap_port?: number;
+  imap_ssl?: boolean;
+  imap_folder?: string;
+  graph_tenant?: string;
+  graph_client_id?: string;
+};
+
 export async function login(authKey: string) {
   const normalizedAuthKey = String(authKey || "").trim();
   return httpRequest<LoginResponse>("/auth/login", {
@@ -519,6 +574,29 @@ export async function stopRegister() {
 
 export async function resetRegister() {
   return httpRequest<{ register: RegisterConfig }>("/api/register/reset", { method: "POST" });
+}
+
+export async function fetchImportedMailboxes() {
+  return httpRequest<ImportedMailboxListResponse>("/api/imported-mailboxes");
+}
+
+export async function importImportedMailboxes(body: ImportedMailboxImportRequest) {
+  return httpRequest<ImportedMailboxImportResponse>("/api/imported-mailboxes/import", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function resetImportedMailbox(id: string) {
+  return httpRequest<ImportedMailboxListResponse>(`/api/imported-mailboxes/${encodeURIComponent(id)}/reset`, {
+    method: "POST",
+  });
+}
+
+export async function deleteImportedMailbox(id: string) {
+  return httpRequest<ImportedMailboxListResponse>(`/api/imported-mailboxes/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 // ── CPA (CLIProxyAPI) ──────────────────────────────────────────────

@@ -1,25 +1,34 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
+import imaplib
+import json
 import random
 import re
 import string
 import time
 from datetime import datetime, timezone
-from email import message_from_string, policy
-from email.utils import parsedate_to_datetime
+from email import message_from_bytes, message_from_string, policy
+from email.header import decode_header, make_header
+from email.utils import getaddresses, parsedate_to_datetime
+from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, TypeVar
 
 import requests
 from curl_cffi import requests as curl_requests
 
+from services import imported_mailbox_service
+
 
 ResultT = TypeVar("ResultT")
 domain_lock = Lock()
 provider_lock = Lock()
+imported_mailbox_lock = Lock()
 domain_index = 0
 provider_index = 0
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+IMPORTED_MAILBOX_STATE_FILE = DATA_DIR / "imported_mailboxes_state.json"
 
 
 def _config(mail_config: dict) -> dict:
@@ -136,7 +145,7 @@ def _extract_code(message: dict[str, Any]) -> str | None:
     match = re.search(r"background-color:\s*#F3F3F3[^>]*>[\s\S]*?(\d{6})[\s\S]*?</p>", content, re.I)
     if match:
         return match.group(1)
-    match = re.search(r"(?:Verification code|code is|浠ｇ爜涓簗楠岃瘉鐮?[:\s]*(\d{6})", content, re.I)
+    match = re.search(r"(?:Verification code|code is|验证码|代码)[^0-9]{0,20}(\d{6})", content, re.I)
     if match and match.group(1) != "177010":
         return match.group(1)
     for code in re.findall(r">\s*(\d{6})\s*<|(?<![#&])\b(\d{6})\b", content):
@@ -611,6 +620,327 @@ class YydsMailProvider(BaseMailProvider):
         self.session.close()
 
 
+def _load_imported_mailbox_state() -> dict[str, Any]:
+    try:
+        data = json.loads(IMPORTED_MAILBOX_STATE_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_imported_mailbox_state(state: dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    IMPORTED_MAILBOX_STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _split_import_line(line: str) -> list[str]:
+    for separator in ("\t", "|", ","):
+        if separator in line:
+            return [item.strip() for item in line.split(separator)]
+    return [line.strip()]
+
+
+def _imported_mailbox_id(provider_ref: str, email: str, line: str) -> str:
+    digest = hashlib.sha256(f"{provider_ref}\n{email.lower()}\n{line}".encode("utf-8", errors="replace")).hexdigest()[:24]
+    return f"{provider_ref}:{digest}"
+
+
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _decode_mime_header(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    try:
+        return str(make_header(decode_header(text)))
+    except Exception:
+        return text
+
+
+def _parse_imported_mailboxes(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    fetch_method = str(entry.get("fetch_method") or "imap").strip().lower()
+    if fetch_method not in {"imap", "graph"}:
+        fetch_method = "imap"
+    import_text = str(entry.get("import_text") or entry.get("mailboxes") or "")
+    items: list[dict[str, Any]] = []
+    for raw_line in import_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parsed: dict[str, Any]
+        if line.startswith("{"):
+            try:
+                value = json.loads(line)
+            except Exception as error:
+                raise RuntimeError(f"导入邮箱 JSON 行格式错误: {error}") from error
+            if not isinstance(value, dict):
+                raise RuntimeError("导入邮箱 JSON 行必须是对象")
+            parsed = dict(value)
+        else:
+            parts = _split_import_line(line)
+            parsed = {"email": parts[0] if parts else ""}
+            if fetch_method == "graph":
+                if len(parts) > 1:
+                    parsed["refresh_token"] = parts[1]
+                if len(parts) > 2:
+                    parsed["client_id"] = parts[2]
+                if len(parts) > 3:
+                    parsed["tenant"] = parts[3]
+            else:
+                if len(parts) > 1:
+                    parsed["password"] = parts[1]
+                if len(parts) > 2:
+                    parsed["imap_host"] = parts[2]
+                if len(parts) > 3:
+                    parsed["imap_port"] = parts[3]
+        email = str(parsed.get("email") or parsed.get("address") or parsed.get("username") or "").strip()
+        if not email or "@" not in email:
+            raise RuntimeError(f"导入邮箱缺少有效邮箱地址: {line[:80]}")
+        item = {
+            "id": _imported_mailbox_id(str(entry.get("provider_ref") or "imported_mailbox"), email, line),
+            "email": email,
+            "fetch_method": str(parsed.get("fetch_method") or fetch_method).strip().lower() or fetch_method,
+            "password": str(parsed.get("password") or parsed.get("app_password") or "").strip(),
+            "imap_host": str(parsed.get("imap_host") or parsed.get("host") or entry.get("imap_host") or "outlook.office365.com").strip(),
+            "imap_port": _safe_int(parsed.get("imap_port") or parsed.get("port") or entry.get("imap_port"), 993),
+            "imap_ssl": _as_bool(parsed.get("imap_ssl", parsed.get("ssl", entry.get("imap_ssl", True))), True),
+            "imap_folder": str(parsed.get("imap_folder") or parsed.get("folder") or entry.get("imap_folder") or "INBOX").strip() or "INBOX",
+            "refresh_token": str(parsed.get("refresh_token") or entry.get("refresh_token") or "").strip(),
+            "client_id": str(parsed.get("client_id") or entry.get("graph_client_id") or entry.get("client_id") or "").strip(),
+            "client_secret": str(parsed.get("client_secret") or entry.get("graph_client_secret") or entry.get("client_secret") or "").strip(),
+            "tenant": str(parsed.get("tenant") or entry.get("graph_tenant") or entry.get("tenant") or "consumers").strip() or "consumers",
+        }
+        if item["fetch_method"] not in {"imap", "graph"}:
+            item["fetch_method"] = fetch_method
+        if item["fetch_method"] == "imap" and not item["password"]:
+            raise RuntimeError(f"导入邮箱 {email} 缺少 IMAP 密码")
+        if item["fetch_method"] == "graph" and (not item["refresh_token"] or not item["client_id"]):
+            raise RuntimeError(f"导入邮箱 {email} 缺少 Graph refresh_token 或 client_id")
+        items.append(item)
+    if not items:
+        raise RuntimeError("导入邮箱列表为空")
+    return items
+
+
+def _mailbox_state_item(state: dict[str, Any], mailbox_id: str) -> dict[str, Any]:
+    value = state.get(mailbox_id)
+    if isinstance(value, dict):
+        return value
+    value = {}
+    state[mailbox_id] = value
+    return value
+
+
+def _update_imported_mailbox_token(imported_id: str, refresh_token: str) -> None:
+    if not imported_id or not refresh_token:
+        return
+    with imported_mailbox_lock:
+        state = _load_imported_mailbox_state()
+        item = _mailbox_state_item(state, imported_id)
+        item["refresh_token"] = refresh_token
+        item["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_imported_mailbox_state(state)
+
+
+class ImportedMailboxProvider(BaseMailProvider):
+    name = "imported_mailbox"
+
+    def __init__(self, entry: dict, conf: dict):
+        super().__init__(conf, str(entry.get("provider_ref") or ""))
+        self.entry = entry
+        self.retry_limit = max(1, int(entry.get("retry_limit") or 1))
+        self.lease_ttl_seconds = max(60, int(entry.get("lease_ttl_seconds") or 1800))
+        self.session = requests.Session()
+        self.session.trust_env = False
+        self.session.headers.update({"User-Agent": conf["user_agent"], "Accept": "application/json"})
+
+    def create_mailbox(self, username: str | None = None) -> dict[str, Any]:
+        item = imported_mailbox_service.reserve_mailbox(self.entry)
+        item.update({
+            "provider": self.name,
+            "provider_ref": self.provider_ref,
+            "address": item["email"],
+            "imported_id": item["id"],
+            "retry_limit": self.retry_limit,
+            "lease_ttl_seconds": self.lease_ttl_seconds,
+        })
+        return item
+
+    def _fetch_imap_messages(self, mailbox: dict[str, Any]) -> list[dict[str, Any]]:
+        host = str(mailbox.get("imap_host") or "outlook.office365.com").strip()
+        port = _safe_int(mailbox.get("imap_port"), 993)
+        folder = str(mailbox.get("imap_folder") or "INBOX").strip() or "INBOX"
+        password = str(mailbox.get("password") or "").strip()
+        address = str(mailbox.get("address") or "").strip()
+        if not password:
+            raise RuntimeError(f"导入邮箱 {address} 缺少 IMAP 密码")
+        client = imaplib.IMAP4_SSL(host, port) if _as_bool(mailbox.get("imap_ssl"), True) else imaplib.IMAP4(host, port)
+        try:
+            client.login(address, password)
+            client.select(folder, readonly=True)
+            status, raw_ids = client.search(None, "ALL")
+            if status != "OK" or not raw_ids:
+                return []
+            ids = raw_ids[0].split()[-20:]
+            messages: list[dict[str, Any]] = []
+            for message_id_bytes in reversed(ids):
+                message_id_text = message_id_bytes.decode("ascii", errors="ignore")
+                status, data = client.fetch(message_id_bytes, "(RFC822)")
+                if status != "OK" or not data:
+                    continue
+                raw_message = next((part[1] for part in data if isinstance(part, tuple) and len(part) > 1), b"")
+                if not raw_message:
+                    continue
+                parsed = message_from_bytes(raw_message, policy=policy.default)
+                recipients = [email for _, email in getaddresses(parsed.get_all("to", []) + parsed.get_all("cc", []) + parsed.get_all("delivered-to", []) + parsed.get_all("x-original-to", []))]
+                plain: list[str] = []
+                html: list[str] = []
+                for part in parsed.walk() if parsed.is_multipart() else [parsed]:
+                    if part.get_content_maintype() == "multipart":
+                        continue
+                    try:
+                        payload = part.get_content()
+                    except Exception:
+                        payload = ""
+                    if not payload:
+                        continue
+                    if part.get_content_type() == "text/html":
+                        html.append(str(payload))
+                    elif part.get_content_type() == "text/plain":
+                        plain.append(str(payload))
+                sender = ""
+                addresses = getaddresses(parsed.get_all("from", []))
+                if addresses:
+                    sender = addresses[0][1] or addresses[0][0]
+                normalized = {
+                    "provider": self.name,
+                    "mailbox": address,
+                    "message_id": str(parsed.get("Message-ID") or message_id_text),
+                    "subject": _decode_mime_header(parsed.get("Subject")),
+                    "sender": sender,
+                    "text_content": "\n".join(plain).strip(),
+                    "html_content": "\n".join(html).strip(),
+                    "received_at": _parse_received_at(parsed.get("Date")),
+                    "to": recipients,
+                    "raw": raw_message.decode("utf-8", errors="replace"),
+                }
+                if _message_matches_email(normalized, address):
+                    messages.append(normalized)
+            return messages
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+    def _graph_access_token(self, mailbox: dict[str, Any]) -> str:
+        tenant = str(mailbox.get("tenant") or "consumers").strip() or "consumers"
+        refresh_token = str(mailbox.get("refresh_token") or "").strip()
+        client_id = str(mailbox.get("client_id") or "").strip()
+        client_secret = str(mailbox.get("client_secret") or "").strip()
+        if not refresh_token or not client_id:
+            raise RuntimeError(f"导入邮箱 {mailbox.get('address')} 缺少 Graph refresh_token 或 client_id")
+        payload = {
+            "client_id": client_id,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "scope": "offline_access Mail.Read",
+        }
+        if client_secret:
+            payload["client_secret"] = client_secret
+        resp = self.session.post(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token", data=payload, timeout=self.conf["request_timeout"])
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        if resp.status_code != 200 or not isinstance(data, dict) or not data.get("access_token"):
+            raise RuntimeError(f"Graph 刷新 token 失败: HTTP {resp.status_code}, body={resp.text[:300]}")
+        rotated_refresh_token = str(data.get("refresh_token") or "").strip()
+        if rotated_refresh_token and rotated_refresh_token != refresh_token:
+            mailbox["refresh_token"] = rotated_refresh_token
+            imported_mailbox_service.update_refresh_token(str(mailbox.get("imported_id") or ""), rotated_refresh_token)
+        return str(data["access_token"])
+
+    def _fetch_graph_messages(self, mailbox: dict[str, Any]) -> list[dict[str, Any]]:
+        address = str(mailbox.get("address") or "").strip()
+        access_token = self._graph_access_token(mailbox)
+        params = {
+            "$top": "20",
+            "$orderby": "receivedDateTime desc",
+            "$select": "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview",
+        }
+        resp = self.session.get("https://graph.microsoft.com/v1.0/me/messages", headers={"Authorization": f"Bearer {access_token}"}, params=params, timeout=self.conf["request_timeout"])
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        if resp.status_code != 200 or not isinstance(data, dict):
+            raise RuntimeError(f"Graph 获取邮件失败: HTTP {resp.status_code}, body={resp.text[:300]}")
+        messages: list[dict[str, Any]] = []
+        for item in data.get("value") or []:
+            if not isinstance(item, dict):
+                continue
+            sender_data = item.get("from") if isinstance(item.get("from"), dict) else {}
+            sender_email = ((sender_data.get("emailAddress") or {}).get("address") if isinstance(sender_data.get("emailAddress"), dict) else "") or ""
+            recipients = []
+            for key in ("toRecipients", "ccRecipients"):
+                for recipient in item.get(key) or []:
+                    if isinstance(recipient, dict) and isinstance(recipient.get("emailAddress"), dict):
+                        recipients.append(str(recipient["emailAddress"].get("address") or ""))
+            body = item.get("body") if isinstance(item.get("body"), dict) else {}
+            content = str(body.get("content") or "")
+            content_type = str(body.get("contentType") or "").lower()
+            normalized = {
+                "provider": self.name,
+                "mailbox": address,
+                "message_id": str(item.get("id") or ""),
+                "subject": str(item.get("subject") or ""),
+                "sender": sender_email,
+                "text_content": str(item.get("bodyPreview") or content if content_type != "html" else item.get("bodyPreview") or ""),
+                "html_content": content if content_type == "html" else "",
+                "received_at": _parse_received_at(item.get("receivedDateTime")),
+                "to": recipients,
+                "raw": item,
+            }
+            if _message_matches_email(normalized, address):
+                messages.append(normalized)
+        return messages
+
+    def _message_sort_key(self, value: dict[str, Any]) -> tuple[float, str]:
+        received_at = _parse_received_at(value.get("received_at"))
+        return ((received_at or datetime.fromtimestamp(0, tz=timezone.utc)).timestamp(), str(value.get("message_id") or ""))
+
+    def fetch_latest_message(self, mailbox: dict[str, Any]) -> dict[str, Any] | None:
+        method = str(mailbox.get("fetch_method") or "imap").strip().lower()
+        messages = self._fetch_graph_messages(mailbox) if method == "graph" else self._fetch_imap_messages(mailbox)
+        if not messages:
+            return None
+        return max(messages, key=self._message_sort_key)
+
+    def close(self) -> None:
+        self.session.close()
+
+
+def finalize_imported_mailbox(mailbox: dict[str, Any], consumed: bool) -> None:
+    imported_mailbox_service.finalize_mailbox(mailbox, consumed)
+
 class LuckMailProvider(BaseMailProvider):
     name = "luckmail"
 
@@ -747,6 +1077,8 @@ def _create_provider(mail_config: dict, provider: str = "", provider_ref: str = 
         return InbucketMailProvider(entry, conf)
     if entry["type"] == "yyds_mail":
         return YydsMailProvider(entry, conf)
+    if entry["type"] == "imported_mailbox":
+        return ImportedMailboxProvider(entry, conf)
     if entry["type"] == "luckmail":
         return LuckMailProvider(entry, conf)
     raise RuntimeError(f"涓嶆敮鎸佺殑 mail.provider: {entry['type']}")
@@ -767,4 +1099,8 @@ def wait_for_code(mail_config: dict, mailbox: dict) -> str | None:
     finally:
         provider.close()
 
+
+def finalize_mailbox(mail_config: dict, mailbox: dict, consumed: bool) -> None:
+    if str(mailbox.get("provider") or "") == "imported_mailbox":
+        finalize_imported_mailbox(mailbox, consumed)
 

@@ -188,6 +188,10 @@ def wait_for_code(mailbox: dict) -> str | None:
     return mail_provider.wait_for_code(config["mail"], mailbox)
 
 
+def finalize_mailbox(mailbox: dict, consumed: bool) -> None:
+    mail_provider.finalize_mailbox(config["mail"], mailbox, consumed)
+
+
 class SentinelTokenGenerator:
     MAX_ATTEMPTS = 500000
     ERROR_PREFIX = "wQ8Lk5FbGpA2NcR9dShT6gYjU7VxZ4D"
@@ -632,6 +636,10 @@ def worker(index: int) -> dict:
                 access_token = str(result["access_token"])
                 account_service.add_accounts([access_token])
                 account_service.refresh_accounts([access_token])
+                try:
+                    finalize_mailbox(mailbox, True)
+                except Exception as error:
+                    step(index, f"邮箱状态更新失败: {error}", "yellow")
                 with stats_lock:
                     stats["done"] += 1
                     stats["success"] += 1
@@ -648,6 +656,11 @@ def worker(index: int) -> dict:
                 registrar.close()
         raise RuntimeError(last_error or "邮箱重试次数用尽")
     except Exception as e:
+        if mailbox:
+            try:
+                finalize_mailbox(mailbox, False)
+            except Exception as error:
+                step(index, f"邮箱状态释放失败: {error}", "yellow")
         cost = time.time() - start
         with stats_lock:
             stats["done"] += 1

@@ -1,5 +1,7 @@
 ﻿"use client";
 
+import Link from "next/link";
+
 import { AlertTriangle, LoaderCircle, Plus, Play, RotateCcw, Save, Square, Trash2, UserPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +57,7 @@ export function RegisterCard() {
       ...(type === "gptmail" ? { api_key: "", default_domain: "" } : {}),
       ...(type === "yyds_mail" ? { api_base: "https://maliapi.215.im/v1", api_key: "", domain: [], subdomain: "", wildcard: false } : {}),
       ...(type === "luckmail" ? { api_base: "https://mails.luckyous.com", api_key: "", project_code: "openai", email_type: "", domain: [], variant_mode: "", retry_limit: 5 } : {}),
+      ...(type === "imported_mailbox" ? { fetch_method: "imap", retry_limit: 1, lease_ttl_seconds: 1800, imap_host: "outlook.office365.com", imap_port: 993, imap_ssl: true, imap_folder: "INBOX", graph_tenant: "consumers", graph_client_id: "" } : {}),
     });
   };
 
@@ -175,6 +178,7 @@ export function RegisterCard() {
                             <SelectItem value="gptmail">gptmail(未测试)</SelectItem>
                             <SelectItem value="yyds_mail">yyds_mail</SelectItem>
                             <SelectItem value="luckmail">luckmail</SelectItem>
+                            <SelectItem value="imported_mailbox">邮箱导入选项</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -235,6 +239,61 @@ export function RegisterCard() {
                           LuckMail 使用购买邮箱接口；同一邮箱失败后会全局重试，达到次数后才换下一个邮箱。
                         </div>
                       ) : null}
+                      {type === "imported_mailbox" ? (
+                        <>
+                          <div className="space-y-2">
+                            <label className="text-sm text-stone-700">取码方式</label>
+                            <Select value={String(provider.fetch_method || "imap")} onValueChange={(value) => updateProvider(index, { fetch_method: value })} disabled={config.enabled}>
+                              <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="imap">IMAP</SelectItem>
+                                <SelectItem value="graph">Graph</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm text-stone-700">邮箱失败重试次数</label>
+                            <Input value={String(provider.retry_limit || 1)} onChange={(event) => updateProvider(index, { retry_limit: Number(event.target.value) || 1 })} placeholder="1" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm text-stone-700">占用超时（秒）</label>
+                            <Input value={String(provider.lease_ttl_seconds || 1800)} onChange={(event) => updateProvider(index, { lease_ttl_seconds: Number(event.target.value) || 1800 })} placeholder="1800" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                          </div>
+                          {String(provider.fetch_method || "imap") === "graph" ? (
+                            <>
+                              <div className="space-y-2">
+                                <label className="text-sm text-stone-700">Graph Tenant</label>
+                                <Input value={String(provider.graph_tenant || "consumers")} onChange={(event) => updateProvider(index, { graph_tenant: event.target.value })} placeholder="consumers" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-sm text-stone-700">Graph Client ID</label>
+                                <Input value={String(provider.graph_client_id || "")} onChange={(event) => updateProvider(index, { graph_client_id: event.target.value })} placeholder="Microsoft OAuth client_id" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="space-y-2">
+                                <label className="text-sm text-stone-700">IMAP Host</label>
+                                <Input value={String(provider.imap_host || "outlook.office365.com")} onChange={(event) => updateProvider(index, { imap_host: event.target.value })} placeholder="outlook.office365.com" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-sm text-stone-700">IMAP Port</label>
+                                <Input value={String(provider.imap_port || 993)} onChange={(event) => updateProvider(index, { imap_port: Number(event.target.value) || 993 })} placeholder="993" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-sm text-stone-700">IMAP Folder</label>
+                                <Input value={String(provider.imap_folder || "INBOX")} onChange={(event) => updateProvider(index, { imap_folder: event.target.value })} placeholder="INBOX" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                              </div>
+                              <label className="flex items-center gap-3 pt-8 text-sm text-stone-700">
+                                <Checkbox checked={Boolean(provider.imap_ssl ?? true)} onCheckedChange={(checked) => updateProvider(index, { imap_ssl: Boolean(checked) })} disabled={config.enabled} />
+                                启用 IMAP SSL
+                              </label>
+                            </>
+                          )}
+                        </>
+                      ) : null}
 
                       {type === "yyds_mail" ? (
                         <>
@@ -250,10 +309,13 @@ export function RegisterCard() {
                       ) : null}
                     </div>
 
-                    {type === "tempmail_lol" || type === "cloudflare_temp_email" || type === "moemail" || type === "inbucket" || type === "yyds_mail" || type === "luckmail" ? (
-                      <div className="space-y-2">
-                        <label className="text-sm text-stone-700">{type === "inbucket" ? "基础域名列表" : "Domain"}</label>
-                        <Textarea value={domains} onChange={(event) => updateProvider(index, { domain: event.target.value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean) })} placeholder={type === "inbucket" ? "每行一个基础域名，系统会自动生成随机子域名" : type === "moemail" ? "每行一个域名" : "每行一个域名，留空则使用服务默认域名"} className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                    {type === "imported_mailbox" ? (
+                      <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-700">
+                        请先到
+                        <Link href="/mailboxes" className="mx-1 font-medium underline underline-offset-2">
+                          邮箱管理
+                        </Link>
+                        页面粘贴并导入邮箱；注册时会从已导入邮箱池中占用一个邮箱，成功后标记已使用，失败后标记失败以便检查或重置。
                       </div>
                     ) : null}
                   </div>
