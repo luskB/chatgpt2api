@@ -1,7 +1,6 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
-
 import { AlertTriangle, LoaderCircle, Plus, Play, RotateCcw, Save, Square, Trash2, UserPlus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +48,7 @@ export function RegisterCard() {
     updateProvider(index, {
       type,
       enable: true,
+      ...(type === "cloudmail_gen" ? { api_base: "", admin_email: "", admin_password: "", domain: [], subdomain: [], email_prefix: "" } : {}),
       ...(type === "cloudflare_temp_email" ? { api_base: "", admin_password: "", domain: [] } : {}),
       ...(type === "tempmail_lol" ? { api_key: "", domain: [] } : {}),
       ...(type === "moemail" ? { api_base: "", api_key: "", domain: [] } : {}),
@@ -56,6 +56,7 @@ export function RegisterCard() {
       ...(type === "duckmail" ? { api_key: "", default_domain: "duckmail.sbs" } : {}),
       ...(type === "gptmail" ? { api_key: "", default_domain: "" } : {}),
       ...(type === "yyds_mail" ? { api_base: "https://maliapi.215.im/v1", api_key: "", domain: [], subdomain: "", wildcard: false } : {}),
+      ...(type === "ddg_mail" ? { ddg_token: "", cf_inbox_jwt: "", cf_domain: [], admin_password: "" } : {}),
       ...(type === "luckmail" ? { api_base: "https://mails.luckyous.com", api_key: "", project_code: "openai", email_type: "", domain: [], variant_mode: "", retry_limit: 5 } : {}),
       ...(type === "imported_mailbox" ? { fetch_method: "imap", retry_limit: 1, lease_ttl_seconds: 1800, imap_host: "outlook.office365.com", imap_port: 993, imap_ssl: true, imap_folder: "INBOX", graph_tenant: "consumers", graph_client_id: "" } : {}),
     });
@@ -150,6 +151,7 @@ export function RegisterCard() {
               {providers.map((provider, index) => {
                 const type = String(provider.type || "tempmail_lol");
                 const domains = Array.isArray(provider.domain) ? provider.domain.map(String).join("\n") : "";
+                const subdomains = Array.isArray(provider.subdomain) ? provider.subdomain.map(String).join("\n") : "";
                 return (
                   <div key={index} className="space-y-3 border-t border-stone-200 pt-3 first:border-t-0 first:pt-0">
                     <div className="flex items-center justify-between gap-3">
@@ -170,6 +172,7 @@ export function RegisterCard() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="cloudmail_gen">cloudmail_gen</SelectItem>
                             <SelectItem value="cloudflare_temp_email">cloudflare_temp_email</SelectItem>
                             <SelectItem value="tempmail_lol">tempmail_lol</SelectItem>
                             <SelectItem value="moemail">moemail</SelectItem>
@@ -177,23 +180,57 @@ export function RegisterCard() {
                             <SelectItem value="duckmail">duckmail</SelectItem>
                             <SelectItem value="gptmail">gptmail(未测试)</SelectItem>
                             <SelectItem value="yyds_mail">yyds_mail</SelectItem>
+                            <SelectItem value="ddg_mail">ddg_mail (DDG邮箱+CF中转)</SelectItem>
                             <SelectItem value="luckmail">luckmail</SelectItem>
                             <SelectItem value="imported_mailbox">邮箱导入选项</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                      {type === "cloudflare_temp_email" || type === "moemail" || type === "inbucket" || type === "yyds_mail" || type === "luckmail" ? (
+                      {type === "cloudmail_gen" || type === "cloudflare_temp_email" || type === "moemail" || type === "inbucket" || type === "yyds_mail" || type === "ddg_mail" || type === "luckmail" ? (
                         <>
                           <div className="space-y-2">
-                            <label className="text-sm text-stone-700">API Base</label>
+                            <label className="text-sm text-stone-700">{type === "cloudmail_gen" ? "CloudMail URL" : "API Base"}</label>
                             <Input value={String(provider.api_base || "")} onChange={(event) => updateProvider(index, { api_base: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
                           </div>
-                          {type === "cloudflare_temp_email" ? (
+                          {type === "cloudmail_gen" ? (
+                            <>
+                              <div className="space-y-2">
+                                <label className="text-sm text-stone-700">管理员邮箱</label>
+                                <Input value={String(provider.admin_email || "")} onChange={(event) => updateProvider(index, { admin_email: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-sm text-stone-700">管理员密码</label>
+                                <Input value={String(provider.admin_password || "")} onChange={(event) => updateProvider(index, { admin_password: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
+                              </div>
+                            </>
+                          ) : null}
+                          {type === "cloudflare_temp_email" || type === "ddg_mail" ? (
                             <div className="space-y-2">
                               <label className="text-sm text-stone-700">Admin Password</label>
                               <Input value={String(provider.admin_password || "")} onChange={(event) => updateProvider(index, { admin_password: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
                             </div>
                           ) : null}
+                        </>
+                      ) : null}
+                      {type === "ddg_mail" ? (
+                        <>
+                        <div className="space-y-2">
+                          <label className="text-sm text-stone-700">DDG Token <span className="text-red-400">*</span></label>
+                          <Input value={String(provider.ddg_token || "")} onChange={(event) => updateProvider(index, { ddg_token: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} placeholder="DuckDuckGo Email Protection 的 Bearer Token" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm text-stone-700">CF Inbox JWT <span className="text-red-400">*</span></label>
+                          <Input value={String(provider.cf_inbox_jwt || "")} onChange={(event) => updateProvider(index, { cf_inbox_jwt: event.target.value })} className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} placeholder="CF 临时邮箱后端的固定收件箱 JWT（DDG 转发目标）" />
+                        </div>
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                          <p className="font-medium mb-1">使用说明</p>
+                          <ol className="list-decimal list-inside space-y-0.5">
+                            <li>先在 <a href="https://duckduckgo.com/email/" target="_blank" className="underline">DuckDuckGo Email Protection</a> 登录并设置转发目标为 CF 收件箱地址</li>
+                            <li>DDG Token 从浏览器 DevTools → Network → quack.duckduckgo.com 请求中获取 <code className="bg-amber-100 px-1 rounded">Authorization: Bearer</code></li>
+                            <li>CF Inbox JWT 从 CF 临时邮箱后端创建固定收件箱后获取</li>
+                            <li>所有 @duck.com 别名收到的邮件会转发到同一个 CF 收件箱，系统按 To: 头自动匹配</li>
+                          </ol>
+                        </div>
                         </>
                       ) : null}
                       {type === "inbucket" ? (
@@ -232,12 +269,10 @@ export function RegisterCard() {
                             <label className="text-sm text-stone-700">邮箱失败重试次数</label>
                             <Input value={String(provider.retry_limit || 5)} onChange={(event) => updateProvider(index, { retry_limit: Number(event.target.value) || 1 })} placeholder="5" className="h-10 rounded-xl border-stone-200 bg-white" disabled={config.enabled} />
                           </div>
+                          <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                            LuckMail 使用购买邮箱接口；同一邮箱失败后会全局重试，达到次数后才换下一个邮箱。
+                          </div>
                         </>
-                      ) : null}
-                      {type === "luckmail" ? (
-                        <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                          LuckMail 使用购买邮箱接口；同一邮箱失败后会全局重试，达到次数后才换下一个邮箱。
-                        </div>
                       ) : null}
                       {type === "imported_mailbox" ? (
                         <>
@@ -292,9 +327,15 @@ export function RegisterCard() {
                               </label>
                             </>
                           )}
+                          <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-700">
+                            请先到
+                            <Link href="/mailboxes" className="mx-1 font-medium underline underline-offset-2">
+                              邮箱管理
+                            </Link>
+                            页面粘贴并导入邮箱；注册时会从已导入邮箱池中占用一个邮箱，成功后标记已使用，失败后标记失败以便检查或重置。
+                          </div>
                         </>
                       ) : null}
-
                       {type === "yyds_mail" ? (
                         <>
                           <div className="space-y-2">
@@ -309,13 +350,16 @@ export function RegisterCard() {
                       ) : null}
                     </div>
 
-                    {type === "imported_mailbox" ? (
-                      <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-700">
-                        请先到
-                        <Link href="/mailboxes" className="mx-1 font-medium underline underline-offset-2">
-                          邮箱管理
-                        </Link>
-                        页面粘贴并导入邮箱；注册时会从已导入邮箱池中占用一个邮箱，成功后标记已使用，失败后标记失败以便检查或重置。
+                    {type === "cloudmail_gen" || type === "tempmail_lol" || type === "cloudflare_temp_email" || type === "moemail" || type === "inbucket" || type === "yyds_mail" || type === "ddg_mail" || type === "luckmail" ? (
+                      <div className="space-y-2">
+                        <label className="text-sm text-stone-700">{type === "cloudmail_gen" ? "邮箱域名" : type === "inbucket" ? "基础域名列表" : "Domain"}</label>
+                        <Textarea value={domains} onChange={(event) => updateProvider(index, { domain: event.target.value.split(/[\n,]/).map((item) => item.trim()) })} placeholder={type === "cloudmail_gen" ? "每行一个域名，留空则使用服务默认域名" : type === "inbucket" ? "每行一个基础域名，系统会自动生成随机子域名" : type === "moemail" ? "每行一个域名" : "每行一个域名，留空则使用服务默认域名"} className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
+                      </div>
+                    ) : null}
+                    {type === "cloudmail_gen" ? (
+                      <div className="space-y-2">
+                        <label className="text-sm text-stone-700">子域名（支持多个）</label>
+                        <Textarea value={subdomains} onChange={(event) => updateProvider(index, { subdomain: event.target.value.split(/[\n,]/).map((item) => item.trim()) })} placeholder="每行一个子域名前缀，留空则直接使用主域名" className="min-h-20 rounded-xl border-stone-200 bg-white font-mono text-xs" disabled={config.enabled} />
                       </div>
                     ) : null}
                   </div>
@@ -370,7 +414,7 @@ export function RegisterCard() {
             </div>
             <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <AlertTriangle className="size-4 shrink-0" />
-              启动之前请先保存配置。
+              启动之前注意先保存配置。
             </div>
         </div>
 
@@ -378,7 +422,7 @@ export function RegisterCard() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-stone-900">实时日志</h3>
-                <p className="mt-1 text-xs text-amber-700">遇到 HTTP 状态码 400 等错误，基本是邮箱已被封，需要更换新的域名邮箱。</p>
+                <p className="mt-1 text-xs text-amber-700">遇到 HTTP 状态码 400 等错误，基本是邮箱滥用被封，需要更换新的域名邮箱。</p>
               </div>
               <Badge variant="secondary" className="rounded-md">
                 {logs.length}
@@ -401,6 +445,3 @@ export function RegisterCard() {
     </div>
   );
 }
-
-
-

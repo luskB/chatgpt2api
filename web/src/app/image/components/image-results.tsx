@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Clock3, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Clock3, Download, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,29 @@ function getStoredImageSrc(image: StoredImage) {
     return `data:image/png;base64,${image.b64_json}`;
   }
   return image.url || "";
+}
+
+async function downloadStoredImage(image: StoredImage, index: number) {
+  let blob: Blob;
+  if (image.b64_json) {
+    const binary = atob(image.b64_json);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    blob = new Blob([bytes], { type: "image/png" });
+  } else if (image.url) {
+    const res = await fetch(image.url);
+    blob = await res.blob();
+  } else {
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `image-${index + 1}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export function ImageResults({
@@ -218,15 +241,28 @@ export function ImageResults({
                                 <span>结果 {index + 1}</span>
                                 {imageMeta ? <span className="block text-stone-400 sm:ml-2 sm:inline">{imageMeta}</span> : null}
                               </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 w-fit rounded-full border-stone-200 bg-white px-2 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:px-3 sm:text-xs"
-                                onClick={() => onContinueEdit(selectedConversation.id, image)}
-                              >
-                                <Sparkles className="size-3 sm:size-4" />
-                                加入编辑
-                              </Button>
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
+                                  onClick={() => onContinueEdit(selectedConversation.id, image)}
+                                  aria-label="加入编辑"
+                                >
+                                  <Sparkles className="size-3 sm:size-4" />
+                                  <span className="hidden sm:inline">加入编辑</span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 w-7 rounded-full border-stone-200 bg-white px-0 text-[10px] text-stone-700 hover:bg-stone-50 sm:h-8 sm:w-fit sm:px-3 sm:text-xs"
+                                  onClick={() => void downloadStoredImage(image, index)}
+                                  aria-label="下载"
+                                >
+                                  <Download className="size-3 sm:size-4" />
+                                  <span className="hidden sm:inline">下载</span>
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -239,12 +275,11 @@ export function ImageResults({
                             className={cn(
                               "break-inside-avoid overflow-hidden rounded-xl border border-rose-200 bg-rose-50 sm:rounded-none",
                               "aspect-square",
-                              turn.size === "1:1" && "sm:aspect-square",
-                              turn.size === "16:9" && "sm:aspect-video",
-                              turn.size === "9:16" && "sm:aspect-[9/16]",
-                              turn.size === "4:3" && "sm:aspect-[4/3]",
-                              turn.size === "3:4" && "sm:aspect-[3/4]",
-                              !["1:1", "16:9", "9:16", "4:3", "3:4"].includes(turn.size) && "sm:aspect-square",
+                              turn.ratio === "1:1" && "sm:aspect-square",
+                              turn.ratio === "16:9" && "sm:aspect-video",
+                              turn.ratio === "9:16" && "sm:aspect-[9/16]",
+                              turn.ratio === "4:3" && "sm:aspect-[4/3]",
+                              turn.ratio === "3:4" && "sm:aspect-[3/4]",
                             )}
                           >
                             <div className="flex h-full min-h-16 flex-col items-center justify-center gap-1.5 px-2 py-2 text-center text-[11px] leading-4 text-rose-600 sm:gap-3 sm:px-6 sm:py-8 sm:text-sm sm:leading-6">
@@ -266,12 +301,11 @@ export function ImageResults({
                           key={image.id}
                           className={cn(
                             "break-inside-avoid overflow-hidden rounded-xl border border-stone-200/80 bg-stone-100/80 sm:rounded-none",
-                            turn.size === "1:1" && "aspect-square",
-                            turn.size === "16:9" && "aspect-video",
-                            turn.size === "9:16" && "aspect-[9/16]",
-                            turn.size === "4:3" && "aspect-[4/3]",
-                            turn.size === "3:4" && "aspect-[3/4]",
-                            !["1:1", "16:9", "9:16", "4:3", "3:4"].includes(turn.size) && "aspect-square",
+                            turn.ratio === "1:1" && "aspect-square",
+                            turn.ratio === "16:9" && "aspect-video",
+                            turn.ratio === "9:16" && "aspect-[9/16]",
+                            turn.ratio === "4:3" && "aspect-[4/3]",
+                            turn.ratio === "3:4" && "aspect-[3/4]",
                           )}
                         >
                           <div className="flex h-full flex-col items-center justify-center gap-1.5 px-2 py-3 text-center text-stone-500 sm:gap-3 sm:px-6 sm:py-8">
