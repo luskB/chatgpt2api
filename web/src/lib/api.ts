@@ -239,6 +239,14 @@ export type UserKey = {
   last_used_at: string | null;
 };
 
+export type McpKey = {
+  id: string;
+  name: string;
+  role: "mcp";
+  created_at: string | null;
+  last_used_at: string | null;
+};
+
 export type ImportedMailboxStatus = "unused" | "leased" | "used" | "failed";
 
 export type ImportedMailbox = {
@@ -684,6 +692,23 @@ export async function deleteUserKey(keyId: string) {
   });
 }
 
+export async function fetchMcpKeys() {
+  return httpRequest<{ items: McpKey[] }>("/api/mcp/keys");
+}
+
+export async function createMcpKey(name: string) {
+  return httpRequest<{ item: McpKey; key: string; items: McpKey[] }>("/api/mcp/keys", {
+    method: "POST",
+    body: { name },
+  });
+}
+
+export async function deleteMcpKey(keyId: string) {
+  return httpRequest<{ items: McpKey[] }>(`/api/mcp/keys/${keyId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchRegisterConfig() {
   return httpRequest<{ register: RegisterConfig }>("/api/register");
 }
@@ -731,8 +756,8 @@ export async function deleteImportedMailbox(id: string) {
 }
 
 export async function deleteImportedMailboxes(ids: string[]) {
-  return httpRequest<ImportedMailboxListResponse>("/api/imported-mailboxes", {
-    method: "DELETE",
+  return httpRequest<ImportedMailboxListResponse>("/api/imported-mailboxes/delete", {
+    method: "POST",
     body: { ids },
   });
 }

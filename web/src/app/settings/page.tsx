@@ -10,6 +10,7 @@ import { ConfigCard } from "./components/config-card";
 import { CPAPoolDialog } from "./components/cpa-pool-dialog";
 import { CPAPoolsCard } from "./components/cpa-pools-card";
 import { ImportBrowserDialog } from "./components/import-browser-dialog";
+import { McpKeysCard } from "./components/mcp-keys-card";
 import { SettingsHeader } from "./components/settings-header";
 import { Sub2APIConnections } from "./components/sub2api-connections";
 import { UserKeysCard } from "./components/user-keys-card";
@@ -67,6 +68,7 @@ function SettingsPageContent() {
       <section className="space-y-6">
         <ConfigCard />
         <BackupSettingsCard />
+        <McpKeysCard />
         <UserKeysCard />
         <CPAPoolsCard />
         <Sub2APIConnections />
