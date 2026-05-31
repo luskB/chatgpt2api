@@ -24,8 +24,18 @@ class ImportMailboxesRequest(ImportedMailboxDefaults):
     text: str = ""
 
 
+class DeleteImportedMailboxesRequest(BaseModel):
+    ids: list[str] = []
+
+
 def create_router() -> APIRouter:
     router = APIRouter()
+
+    def selected_ids(body: DeleteImportedMailboxesRequest) -> list[str]:
+        ids = [str(item).strip() for item in body.ids if str(item).strip()]
+        if not ids:
+            raise HTTPException(status_code=400, detail="璇烽€夋嫨瑕佸垹闄ょ殑閭")
+        return ids
 
     @router.get("/api/imported-mailboxes")
     async def list_imported_mailboxes(authorization: str | None = Header(default=None)):
@@ -38,6 +48,19 @@ def create_router() -> APIRouter:
         payload = body.model_dump(exclude_none=True)
         text = str(payload.pop("text", ""))
         return imported_mailbox_service.import_mailboxes(text, payload)
+
+    @router.delete("/api/imported-mailboxes")
+    async def delete_imported_mailboxes(body: DeleteImportedMailboxesRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        ids = [str(item).strip() for item in body.ids if str(item).strip()]
+        if not ids:
+            raise HTTPException(status_code=400, detail="请选择要删除的邮箱")
+        return imported_mailbox_service.delete_mailboxes(ids)
+
+    @router.post("/api/imported-mailboxes/delete")
+    async def delete_imported_mailboxes_by_post(body: DeleteImportedMailboxesRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        return imported_mailbox_service.delete_mailboxes(selected_ids(body))
 
     @router.post("/api/imported-mailboxes/{mailbox_id}/reset")
     async def reset_imported_mailbox(mailbox_id: str, authorization: str | None = Header(default=None)):

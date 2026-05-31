@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-MCP_PROTOCOL_VERSION = "2025-11-25"
+MCP_PROTOCOL_VERSION = "2024-11-05"
+MCP_SUPPORTED_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26")
 MCP_SERVER_NAME = "chatgpt2api-search"
 MCP_TOOL_NAME = "chatgpt_search"
 
@@ -51,7 +52,7 @@ def handle_mcp_message(
 
     try:
         if method == "initialize":
-            return _result(request_id, _initialize_result(server_version))
+            return _result(request_id, _initialize_result(server_version, message.get("params")))
         if method == "ping":
             return _result(request_id, {})
         if method == "notifications/initialized":
@@ -68,9 +69,17 @@ def handle_mcp_message(
     return _error(request_id, ERROR_METHOD_NOT_FOUND, f"Method not found: {method}")
 
 
-def _initialize_result(server_version: str) -> dict[str, Any]:
+def _initialize_result(server_version: str, params: object = None) -> dict[str, Any]:
+    requested_version = ""
+    if isinstance(params, dict):
+        requested_version = str(params.get("protocolVersion") or "").strip()
+    protocol_version = (
+        requested_version
+        if requested_version in MCP_SUPPORTED_PROTOCOL_VERSIONS
+        else MCP_PROTOCOL_VERSION
+    )
     return {
-        "protocolVersion": MCP_PROTOCOL_VERSION,
+        "protocolVersion": protocol_version,
         "capabilities": {"tools": {"listChanged": False}},
         "serverInfo": {
             "name": MCP_SERVER_NAME,
