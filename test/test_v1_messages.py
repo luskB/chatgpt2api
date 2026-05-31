@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import unittest
 
 import requests
 
 AUTH_KEY = "chatgpt2api"
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("CHATGPT2API_TEST_BASE_URL", "http://127.0.0.1:8866").rstrip("/")
 MODEL = "auto"
 
 

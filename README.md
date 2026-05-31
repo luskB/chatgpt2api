@@ -59,6 +59,28 @@ http://服务器IP:8866/v1
 Authorization: Bearer <auth-key>
 ```
 
+### MCP 搜索接口
+
+本项目也提供一个 HTTP MCP 入口，方便支持 MCP 的客户端直接调用 ChatGPT 原生联网搜索能力：
+
+```text
+https://<public-ip>:8866/mcp?ApiKey=<auth-key>
+```
+
+本地测试地址示例：
+
+```text
+http://127.0.0.1:8866/mcp?ApiKey=<auth-key>
+```
+
+MCP 工具名为 `chatgpt_search`，参数为：
+
+```json
+{
+  "prompt": "要搜索的问题"
+}
+```
+
 ### Web 管理页面
 
 默认 Web 面板：
