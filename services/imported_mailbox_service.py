@@ -404,3 +404,15 @@ def delete_mailbox(mailbox_id: str) -> None:
         if len(kept) == len(items):
             raise KeyError("邮箱记录不存在")
         _save(kept)
+
+
+def delete_mailboxes(mailbox_ids: list[str]) -> dict[str, Any]:
+    targets = {mailbox_id for mailbox_id in dict.fromkeys(str(item or "").strip() for item in mailbox_ids) if mailbox_id}
+    with _lock:
+        items = _load()
+        kept = [item for item in items if str(item.get("id") or "") not in targets]
+        removed = len(items) - len(kept)
+        if removed:
+            _save(kept)
+        public_items = [_public_record(item) for item in sorted(kept, key=lambda value: str(value.get("created_at") or ""), reverse=True)]
+        return {"items": public_items, "summary": _summary(kept), "removed": removed}
