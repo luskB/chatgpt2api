@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import {
   deleteImportedMailbox,
+  deleteImportedMailboxes,
   fetchImportedMailboxes,
   importImportedMailboxes,
   resetImportedMailbox,
@@ -66,6 +67,8 @@ function MailboxesPageContent() {
   const [pageSize, setPageSize] = useState(20);
   const [customPageSize, setCustomPageSize] = useState("");
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const load = async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -111,6 +114,29 @@ function MailboxesPageContent() {
   const pageItems = filteredItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const pageStart = filteredItems.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const pageEnd = Math.min(currentPage * pageSize, filteredItems.length);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedFilteredCount = filteredItems.filter((item) => selectedSet.has(item.id)).length;
+  const currentPageSelected = pageItems.length > 0 && pageItems.every((item) => selectedSet.has(item.id));
+  const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((item) => selectedSet.has(item.id));
+
+  const toggleSelected = (ids: string[], checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      ids.forEach((id) => {
+        if (checked) {
+          next.add(id);
+        } else {
+          next.delete(id);
+        }
+      });
+      return Array.from(next);
+    });
+  };
+
+  const pruneSelection = (nextItems: ImportedMailbox[]) => {
+    const existingIds = new Set(nextItems.map((item) => item.id));
+    setSelectedIds((current) => current.filter((id) => existingIds.has(id)));
+  };
 
   useEffect(() => {
     setPage(1);
@@ -177,9 +203,32 @@ function MailboxesPageContent() {
       const data = await deleteImportedMailbox(id);
       setItems(data.items);
       setSummary(data.summary);
+      setSelectedIds((current) => current.filter((item) => item !== id));
       toast.success("邮箱已删除");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "删除失败");
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) {
+      toast.error("请先选择要删除的邮箱");
+      return;
+    }
+    if (!window.confirm(`确定删除选中的 ${selectedIds.length} 个邮箱吗？此操作不可恢复。`)) {
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const data = await deleteImportedMailboxes(selectedIds);
+      setItems(data.items);
+      setSummary(data.summary);
+      pruneSelection(data.items);
+      toast.success(`已删除 ${data.removed ?? selectedIds.length} 个邮箱`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "批量删除失败");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -335,11 +384,34 @@ function MailboxesPageContent() {
           <p className="text-xs text-stone-500">
             共 {items.length} 个，筛选后 {filteredItems.length} 个，当前显示 {pageStart}-{pageEnd}。
           </p>
+          <div className="flex flex-col gap-2 rounded-xl border border-stone-100 bg-stone-50/80 p-3 text-sm text-stone-600 md:flex-row md:items-center md:justify-between">
+            <div>
+              已选择 {selectedIds.length} 个{selectedFilteredCount > 0 ? `（当前筛选内 ${selectedFilteredCount} 个）` : ""}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-3" onClick={() => toggleSelected(pageItems.map((item) => item.id), !currentPageSelected)} disabled={pageItems.length === 0}>
+                {currentPageSelected ? "取消本页" : "本页全选"}
+              </Button>
+              <Button variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-3" onClick={() => toggleSelected(filteredItems.map((item) => item.id), !allFilteredSelected)} disabled={filteredItems.length === 0}>
+                {allFilteredSelected ? "取消筛选结果" : "全选筛选结果"}
+              </Button>
+              <Button variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-3" onClick={() => setSelectedIds([])} disabled={selectedIds.length === 0}>
+                取消选择
+              </Button>
+              <Button className="h-9 rounded-xl bg-rose-600 px-3 text-white hover:bg-rose-700" onClick={() => void handleDeleteSelected()} disabled={selectedIds.length === 0 || isDeleting}>
+                {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                删除所选
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="overflow-x-auto p-0">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <Checkbox checked={currentPageSelected} onCheckedChange={(checked) => toggleSelected(pageItems.map((item) => item.id), Boolean(checked))} />
+                </TableHead>
                 <TableHead>邮箱</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>方式</TableHead>
@@ -352,7 +424,7 @@ function MailboxesPageContent() {
             <TableBody>
               {filteredItems.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-stone-400">
+                  <TableCell colSpan={8} className="py-10 text-center text-stone-400">
                     {items.length === 0 ? "暂无导入邮箱" : "没有符合筛选条件的邮箱"}
                   </TableCell>
                 </TableRow>
@@ -361,6 +433,9 @@ function MailboxesPageContent() {
                   const meta = statusMeta[item.status] || statusMeta.unused;
                   return (
                     <TableRow key={item.id}>
+                      <TableCell>
+                        <Checkbox checked={selectedSet.has(item.id)} onCheckedChange={(checked) => toggleSelected([item.id], Boolean(checked))} />
+                      </TableCell>
                       <TableCell>
                         <div className="font-medium text-stone-900">{item.email}</div>
                         <div className="mt-1 text-xs text-stone-400">{item.id}</div>

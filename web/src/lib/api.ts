@@ -275,6 +275,7 @@ export type ImportedMailboxSummary = {
 export type ImportedMailboxListResponse = {
   items: ImportedMailbox[];
   summary: ImportedMailboxSummary;
+  removed?: number;
 };
 
 export type ImportedMailboxImportResponse = ImportedMailboxListResponse & {
@@ -726,6 +727,13 @@ export async function resetImportedMailbox(id: string) {
 export async function deleteImportedMailbox(id: string) {
   return httpRequest<ImportedMailboxListResponse>(`/api/imported-mailboxes/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+export async function deleteImportedMailboxes(ids: string[]) {
+  return httpRequest<ImportedMailboxListResponse>("/api/imported-mailboxes", {
+    method: "DELETE",
+    body: { ids },
   });
 }
 
