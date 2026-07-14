@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from api import accounts, ai, image_tasks, imported_mailboxes, mcp, register, system
+from api import accounts, ai, image_tasks, mcp, register, system
 from api.errors import install_exception_handlers
 from api.support import resolve_web_asset, start_limited_account_watcher
 from services.backup_service import backup_service
@@ -45,12 +45,11 @@ def create_app() -> FastAPI:
     app.include_router(ai.create_router())
     app.include_router(accounts.create_router())
     app.include_router(image_tasks.create_router())
-    app.include_router(imported_mailboxes.create_router())
     app.include_router(mcp.create_router())
     app.include_router(register.create_router())
     app.include_router(system.create_router(app_version))
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def serve_web(full_path: str):
         asset = resolve_web_asset(full_path)
         if asset is not None:

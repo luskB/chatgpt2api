@@ -1,5 +1,7 @@
 # Python-generated files
 __pycache__/
+.pytest_cache/
+.tiktoken-cache/
 *.py[oc]
 build/
 dist/
@@ -12,8 +14,6 @@ web_dist
 data
 config.json
 edit
-
-docker-compose-local.yml
 
 .claude/settings.local.json
 
@@ -28,3 +28,8 @@ docker-compose-local.yml
 
 # Git cache
 git_cache/
+
+# 调试/测试输出目录
+loginwithpassword_*/
+logwithemailverifycode_*/
+test_batch_output/

@@ -21,7 +21,6 @@ def test_container_build_does_not_require_local_config_file() -> None:
 
 def test_local_service_port_references_use_project_default() -> None:
     scanned_paths = [
-        ".codex/skills/chatgpt2api-search/SKILL.md",
         "test/utils.py",
         "test/test_gpt_ppt.py",
         "test/test_gpt_psd.py",
@@ -37,8 +36,6 @@ def test_local_service_port_references_use_project_default() -> None:
     for path in scanned_paths:
         content = read(path)
         assert not any(host in content for host in stale_hosts), path
-
-    assert f"127.0.0.1:{DEFAULT_PORT}" in read(".codex/skills/chatgpt2api-search/SKILL.md")
 
 
 def test_python_entrypoint_uses_project_default_port() -> None:

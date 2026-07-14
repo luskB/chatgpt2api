@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.error
 import urllib.parse
@@ -9,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from uuid import uuid4
 
-BASE_URL = os.getenv("CHATGPT2API_TEST_BASE_URL", "http://127.0.0.1:8866").rstrip("/")
+BASE_URL = "http://127.0.0.1:8866"
 PROMPT = "生成一份 2026 年 Q2 电商运营复盘 PPT，8 页以内，商务科技风，包含销售、用户、渠道、广告、618 活动和 Q3 规划。"
 BASE64_IMAGES: list[str] = []
 TIMEOUT_SECS = 600

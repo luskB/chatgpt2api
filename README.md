@@ -1,6 +1,6 @@
 # ChatGPT2API 自用增强版
 
-> 本项目基于 [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) 二次修改而来，当前已跟进到 upstream `v1.4.0`，并保留本仓库自定义的 LuckMail、导入邮箱注册、邮箱管理页面、`8866` 端口和 Docker 本地源码构建等功能。
+> 本项目基于 [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) 二次修改而来，当前已跟进到 upstream `v1.6.0`，并保留本仓库自定义的 LuckMail、MCP 搜索与独立鉴权、`8866` 端口和 Docker 本地源码构建等功能。
 
 ## 说明
 
@@ -10,8 +10,8 @@
 
 - LuckMail 邮箱提供商支持
 - 同一邮箱失败后按配置重试
-- Microsoft Graph / IMAP 邮箱支持
-- 导入邮箱状态管理：未使用、占用中、已使用、失败
+- 使用 upstream v1.6.0 OutlookToken 邮箱池，支持 Microsoft Graph / IMAP XOAUTH2
+- Outlook 邮箱状态管理：未使用、占用中、已使用、token 失效、失败
 - 默认本地服务端口改为 `8866`
 - Docker Compose 默认从本地源码构建，而不是拉取原作者镜像
 - 将搜索封装成MCP使用，并添加MCP鉴权
@@ -91,7 +91,6 @@ http://服务器IP:8866
 - `/image`：在线生图
 - `/accounts`：号池管理
 - `/register`：注册机配置
-- `/mailboxes`：导入邮箱管理
 - `/image-manager`：图片管理
 - `/logs`：日志管理
 - `/debug`：调试页面
@@ -115,7 +114,7 @@ LuckMail 使用直接购买邮箱接口，而不是一次性接码订单接口�
 - `variant_mode`：仅部分邮箱类型需要
 - `retry_limit`：同一邮箱失败重试次数，默认 `5`
 
-#### 导入邮箱
+#### OutlookToken 邮箱池
 
 适合已经拥有的 Microsoft 邮箱，例如：
 
@@ -123,33 +122,28 @@ LuckMail 使用直接购买邮箱接口，而不是一次性接码订单接口�
 - Outlook
 - Live
 
-支持两种取码方式：
+支持三种取码方式：
 
 - `Graph`：通过 Microsoft Graph + refresh_token 读取邮件
-- `IMAP`：通过 IMAP 登录邮箱读取邮件
+- `IMAP`：通过 IMAP XOAUTH2 读取邮件
+- `Auto`：Graph 失败后自动回退到 IMAP
 
-邮箱需要先在 `/mailboxes` 页面导入，然后注册机选择“邮箱导入选项”。
+在 `/register` 页面添加 `outlook_token` provider，并将邮箱凭据粘贴到“邮箱池导入”文本框。
 
-Graph 推荐导入格式：
+导入格式：
 
 ```text
 email----password----client_id----refresh_token
 ```
 
-IMAP 推荐导入格式：
-
-```text
-email----password
-```
-
 说明：
 
 - 使用 `----` 作为分隔符
-- Graph 方式真正用于取码的是 `client_id` 和 `refresh_token`
-- 导入记录保存在 `data/imported_mailboxes.json`
-- 页面只显示脱敏后的密码和 token
-- 注册成功后邮箱会标记为“已使用”
-- 注册失败后邮箱会标记为“失败”，可在页面手动重置
+- 真正用于 OAuth 取码的是 `client_id` 和 `refresh_token`
+- 邮箱池保存在注册机配置中，状态记录保存在 `data/outlook_token_used.json`
+- 配置 API 和 SSE 只返回邮箱脱敏预览，不回传密码和 refresh_token
+- 页面支持清除失败/占用状态、清空未使用凭据和重置全部状态
+- 旧版 `data/imported_mailboxes.json` 不会被删除，但 v1.6.0 版本不再读取它；请按上述格式重新导入
 
 ## Docker 部署
 
@@ -306,7 +300,7 @@ curl http://127.0.0.1:8866/v1/chat/completions \
 本仓库当前已同步原项目：
 
 ```text
-basketikun/chatgpt2api v1.4.0
+basketikun/chatgpt2api v1.6.0
 ```
 
 并在此基础上保留自定义功能。后续如果继续同步 upstream，重点注意这些文件的冲突：

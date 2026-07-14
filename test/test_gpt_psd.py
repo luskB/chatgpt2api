@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.error
 import urllib.parse
@@ -9,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from uuid import uuid4
 
-BASE_URL = os.getenv("CHATGPT2API_TEST_BASE_URL", "http://127.0.0.1:8866").rstrip("/")
+BASE_URL = "http://127.0.0.1:8866"
 PROMPT = "按原图位置拆分海报元素并合成可编辑 PSD，同时输出每个图层素材 zip。"
 BASE64_IMAGES: list[str] = []
 TIMEOUT_SECS = 600

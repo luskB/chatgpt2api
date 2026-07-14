@@ -20,7 +20,7 @@ SearchHandler = Callable[[str], dict[str, Any]]
 def handle_mcp_batch(
     payload: object,
     search_handler: SearchHandler,
-    server_version: str = "1.4.0",
+    server_version: str = "1.6.0",
 ) -> dict[str, Any] | list[dict[str, Any]] | None:
     if isinstance(payload, list):
         if not payload:
@@ -37,7 +37,7 @@ def handle_mcp_batch(
 def handle_mcp_message(
     message: object,
     search_handler: SearchHandler,
-    server_version: str = "1.4.0",
+    server_version: str = "1.6.0",
 ) -> dict[str, Any] | None:
     if not isinstance(message, dict):
         return _error(None, ERROR_INVALID_REQUEST, "Invalid Request")

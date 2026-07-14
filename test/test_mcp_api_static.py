@@ -15,7 +15,7 @@ def test_mcp_router_is_mounted_before_web_fallback() -> None:
 
     assert "mcp" in app_py
     assert "app.include_router(mcp.create_router(" in app_py
-    assert app_py.index("app.include_router(mcp.create_router(") < app_py.index('@app.get("/{full_path:path}"')
+    assert app_py.index("app.include_router(mcp.create_router(") < app_py.index('@app.api_route("/{full_path:path}"')
 
 
 def test_mcp_route_uses_query_api_key_and_search_handler() -> None:
